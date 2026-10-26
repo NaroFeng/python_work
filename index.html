@@ -1,0 +1,790 @@
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>太空戰情室 · 全球太空發射任務與商業航太趨勢分析</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2304060c' stroke='%2322d3ee' stroke-width='2'/%3E%3Cellipse cx='16' cy='16' rx='11' ry='4.5' fill='none' stroke='%2322d3ee' stroke-width='1.5' transform='rotate(-28 16 16)'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%2322d3ee'/%3E%3C/svg%3E">
+<script src="./vendor/tailwind.js"></script>
+<script>
+tailwind.config = { theme: { extend: { fontFamily: {
+  sans: ['"Microsoft JhengHei"', '"Noto Sans TC"', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+  mono: ['ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'] } } } };
+</script>
+<script src="./vendor/chart.umd.min.js"></script>
+<style>
+  html { scroll-behavior: smooth; }
+  body {
+    background-color: #04060c; color: #e2e8f0; min-height: 100vh;
+    background-image:
+      radial-gradient(1100px 560px at 10% -10%, rgba(34,211,238,.14), transparent 60%),
+      radial-gradient(900px 500px at 90% -5%, rgba(168,85,247,.13), transparent 55%),
+      radial-gradient(1000px 700px at 50% 115%, rgba(249,115,22,.09), transparent 60%);
+    background-attachment: fixed;
+  }
+  .glass { background: rgba(255,255,255,.045); backdrop-filter: blur(16px) saturate(140%);
+           border: 1px solid rgba(255,255,255,.09); box-shadow: 0 8px 32px rgba(0,0,0,.35); }
+  .glass-soft { background: rgba(255,255,255,.025); border: 1px solid rgba(255,255,255,.07); }
+  .acard { cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .acard:hover { transform: translateY(-3px); }
+  .acard.on { border-color: var(--c); box-shadow: 0 0 0 1px var(--c), 0 12px 44px -10px var(--c); }
+  .acard.on .glowbar { opacity: 1; }
+  .glowbar { opacity: 0; transition: opacity .2s ease; }
+  .chip { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(148,163,184,.28); border-radius: 99px; }
+  .fade-in { animation: fade .4s ease both; }
+  @keyframes fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  input[type=range] { -webkit-appearance: none; height: 6px; border-radius: 99px; outline: none; }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #22d3ee; border: 3px solid #04060c; box-shadow: 0 0 0 1px #22d3ee, 0 0 14px #22d3ee88;
+    cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { background: rgba(148,163,184,.25); border-radius: 99px; }
+
+  /* ===== 動態排行榜：DOM + CSS translateY 物理交換動畫 ===== */
+  .race-bar-row {
+    position: absolute; left: 0; right: 0; height: 42px;
+    transition: transform .35s cubic-bezier(.22, 1, .36, 1);
+    will-change: transform;
+  }
+  .race-bar-row .track {
+    transition: box-shadow .35s ease, border-color .35s ease, background .35s ease;
+  }
+  .race-bar-row .fill, .race-bar-row .halofill {
+    transform-origin: left center; will-change: transform;
+  }
+  .race-bar-row .halo { opacity: 0; transition: opacity .30s ease; pointer-events: none; }
+  .race-bar-row.overtake .halo { opacity: .80; }
+  .race-bar-row.overtake .track {
+    box-shadow: 0 0 26px -3px var(--c); border-color: var(--c);
+  }
+  .race-bar-row.overtake .rnk { color: #fde68a; text-shadow: 0 0 12px rgba(253,230,138,.75); }
+  .rOpt { transition: background .18s ease, color .18s ease, border-color .18s ease; }
+  .rOpt.active {
+    background: rgba(34,211,238,.18); color: #67e8f9; border-color: rgba(34,211,238,.55);
+    box-shadow: 0 0 16px -6px #22d3ee;
+  }
+  .rOpt.active[data-mode="rolling"] {
+    background: rgba(244,114,182,.18); color: #f9a8d4; border-color: rgba(244,114,182,.55);
+    box-shadow: 0 0 16px -6px #f472b6;
+  }
+</style>
+</head>
+<body class="font-sans antialiased">
+
+<header class="max-w-[1680px] mx-auto px-5 sm:px-8 pt-8 pb-3">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div class="flex items-center gap-4">
+      <div class="h-12 w-12 rounded-2xl glass grid place-items-center text-2xl">🛰️</div>
+      <div>
+        <h1 class="text-2xl md:text-3xl font-black tracking-tight">太空戰情室<span class="text-cyan-300">.</span></h1>
+        <p class="text-[11px] md:text-sm text-slate-400 mt-1">
+          全球太空發射任務與商業航太趨勢分析 · <span id="yearRange" class="font-mono">2000–2025</span> · 逐筆任務資料 <span id="missionCount" class="font-mono text-cyan-300"></span> 筆
+        </p>
+      </div>
+    </div>
+    <div class="flex flex-col items-end gap-2">
+      <button id="syncBtn"
+        class="group inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-400/15 border border-cyan-400/40 text-cyan-200 text-[12px] font-bold hover:bg-cyan-400/25 hover:shadow-[0_0_24px_-6px_#22d3ee] transition disabled:opacity-50 disabled:cursor-wait">
+        <span id="syncIcon" class="text-base leading-none">🔄</span>
+        <span id="syncLabel">同步最新數據 (Sync Live Data)</span>
+      </button>
+      <div id="syncStatus" class="text-[10px] text-slate-500 text-right leading-4 max-w-[260px]">尚未同步</div>
+    </div>
+    <div class="text-[11px] text-slate-500 leading-5 md:text-right w-full md:w-auto">
+      資料來源：Wikipedia 歷年軌道發射列表（建置時資料快照）<br>
+      Flask + Tailwind CSS + Chart.js ｜ 同步按鈕會重抓 <span id="syncYear" class="text-slate-300 font-mono">2026</span> 年 YTD 發射資料
+    </div>
+  </div>
+  <div id="kpis" class="mt-6 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3"></div>
+</header>
+
+<main class="max-w-[1680px] mx-auto px-5 sm:px-8 pb-16 space-y-6">
+
+  <!-- ① 航太機構選擇矩陣 -->
+  <section>
+    <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+      <h2 class="text-[11px] font-bold text-cyan-300 tracking-[.22em] uppercase">① 航太機構選擇矩陣 · Agency Matrix</h2>
+      <p class="text-[11px] text-slate-500">點擊任一機構卡片 → 下方所有儀表板即時切換為該機構的專屬視角</p>
+    </div>
+    <div id="cards" class="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3"></div>
+  </section>
+
+  <!-- ② 機構檔案 + 發射影片 -->
+  <section id="profileWrap" class="grid lg:grid-cols-5 gap-5">
+    <div class="lg:col-span-3 glass rounded-2xl p-6 fade-in">
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div class="flex items-center gap-3">
+            <span id="pFlag" class="h-12 w-12 rounded-xl grid place-items-center text-2xl shrink-0"></span>
+            <div>
+              <h3 id="pName" class="text-xl font-black tracking-tight"></h3>
+              <p id="pRole" class="text-[11px] text-slate-400 mt-0.5"></p>
+            </div>
+          </div>
+          <div id="pChips" class="flex flex-wrap gap-2 mt-3"></div>
+        </div>
+      </div>
+      <div id="pKpis" class="grid grid-cols-3 gap-3 mt-5"></div>
+      <div class="mt-5 space-y-4 text-[13px] leading-relaxed text-slate-300">
+        <div><div class="text-[11px] font-bold text-cyan-300/90 mb-1 tracking-wider">背景 BACKGROUND</div>
+             <p id="pBg" class="text-slate-300"></p></div>
+        <div><div class="text-[11px] font-bold text-cyan-300/90 mb-1 tracking-wider">主力載具 LAUNCH VEHICLES</div>
+             <p id="pRockets" class="text-slate-200 font-medium"></p></div>
+        <div><div class="text-[11px] font-bold text-cyan-300/90 mb-1 tracking-wider">營運特色 SIGNATURE</div>
+             <p id="pFeature" class="text-slate-300"></p></div>
+      </div>
+      <div class="mt-5 pt-4 border-t border-white/10">
+        <div class="text-[11px] font-bold text-cyan-300/90 mb-2 tracking-wider">TOP 10 載具家族可靠度</div>
+        <div id="pRocketBars" class="space-y-1.5"></div>
+      </div>
+    </div>
+
+    <div class="lg:col-span-2 glass rounded-2xl p-6 fade-in flex flex-col">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-[11px] font-bold text-cyan-300 tracking-[.22em] uppercase">代表任務影片 · Mission Footage</h3>
+      </div>
+      <div class="aspect-video rounded-xl overflow-hidden border border-white/10 bg-black">
+        <iframe id="ytFrame" class="w-full h-full" title="launch video"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      </div>
+      <p id="ytTitle" class="text-[12px] text-slate-300 mt-3 leading-relaxed"></p>
+
+      <div class="mt-4 pt-4 border-t border-white/10">
+        <div class="text-[11px] font-bold text-cyan-300/90 mb-2.5 tracking-wider">
+          近兩年代表性發射影片 · 2025-2026 LAUNCH HIGHLIGHTS</div>
+        <div id="pVideoGrid" class="grid grid-cols-1 gap-2"></div>
+        <a id="ytSearchLink" class="mt-3 inline-flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-cyan-300 transition"
+           target="_blank" rel="noopener noreferrer">在 YouTube 搜尋更多發射畫面 ↗</a>
+      </div>
+
+      <a id="wikiLink" class="mt-auto pt-4 inline-flex items-center gap-2 text-[12px] text-cyan-300 hover:text-cyan-200 transition"
+         target="_blank" rel="noopener noreferrer">
+        <span id="wikiLabel"></span> <span class="text-slate-500">↗</span></a>
+    </div>
+  </section>
+
+  <!-- ③ 動態排行榜拉扯圖（DOM + CSS translateY 物理交換動畫） -->
+  <section class="glass rounded-2xl p-5 sm:p-6">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h2 class="text-[11px] font-bold text-cyan-300 tracking-[.22em] uppercase">③ 動態排行榜拉扯圖 · Bar Chart Race</h2>
+        <p id="raceSubtitle" class="text-[11px] text-slate-500 mt-1">載入時間序列中…</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex gap-1 p-1 rounded-xl glass-soft">
+          <button data-gran="weekly" class="rOpt chip rounded-lg px-3 py-1.5 text-[11px] font-bold">週 Weekly</button>
+          <button data-gran="monthly" class="rOpt chip rounded-lg px-3 py-1.5 text-[11px] font-bold">月 Monthly</button>
+        </div>
+        <div class="flex gap-1 p-1 rounded-xl glass-soft">
+          <button data-mode="cumulative" class="rOpt chip rounded-lg px-3 py-1.5 text-[11px] font-bold">歷史累積</button>
+          <button data-mode="rolling" class="rOpt chip rounded-lg px-3 py-1.5 text-[11px] font-bold">滾動激戰</button>
+        </div>
+        <div class="flex gap-1 p-1 rounded-xl glass-soft">
+          <button data-speed="1" class="rOpt chip rounded-lg px-3 py-1.5 text-[11px] font-bold">1x</button>
+          <button data-speed="2" class="rOpt chip rounded-lg px-3 py-1.5 text-[11px] font-bold">2x</button>
+          <button data-speed="4" class="rOpt chip rounded-lg px-3 py-1.5 text-[11px] font-bold">4x</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3 mb-4">
+      <button id="playBtn" class="px-4 py-2 rounded-xl bg-cyan-400/15 border border-cyan-400/40 text-cyan-200 text-sm font-bold hover:bg-cyan-400/25 transition">▶ 播放</button>
+      <button id="resetBtn" class="px-3 py-2 rounded-xl glass-soft text-slate-300 text-sm hover:bg-white/10 transition">⏮ 重置</button>
+      <div class="flex-1 min-w-[240px] flex items-center gap-2">
+        <input id="yearSlider" type="range" min="0" max="100" value="100" class="flex-1">
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="periodLabel" class="font-mono text-lg font-black text-cyan-300">—</span>
+        <span id="modeTag" class="chip rounded-md px-2 py-0.5 text-[10px] font-bold text-cyan-300">累積</span>
+      </div>
+    </div>
+
+    <div id="raceStage" class="relative overflow-hidden rounded-xl border border-white/[.06] bg-black/25" style="height:516px">
+      <div id="raceBars" class="absolute inset-0"></div>
+      <div id="raceWatermark" class="absolute bottom-2 right-3 font-mono font-black leading-none text-white/[.07] pointer-events-none select-none tracking-tight" style="font-size:82px"></div>
+    </div>
+  </section>
+
+  <!-- ④ 市佔率消長 + 火箭可靠度 -->
+  <section class="grid lg:grid-cols-2 gap-5">
+    <div class="glass rounded-2xl p-5 sm:p-6">
+      <h2 class="text-[11px] font-bold text-cyan-300 tracking-[.22em] uppercase">④-A 全球市佔率消長 · 100% Stacked Market Share</h2>
+      <p class="text-[11px] text-slate-500 mt-1 mb-3">觀察 Roscosmos／ULA 的份額被 SpaceX／CNSA 吞噬的過程（比單看數量更能看出版圖轉移）</p>
+      <div class="h-[340px]"><canvas id="marketChart"></canvas></div>
+    </div>
+    <div class="glass rounded-2xl p-5 sm:p-6">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <h2 class="text-[11px] font-bold text-cyan-300 tracking-[.22em] uppercase">④-B 主力火箭家族可靠度 · Reliability</h2>
+        <div class="flex gap-1.5">
+          <button data-scope="global" class="scopeBtn chip rounded-lg px-3 py-1 text-[11px] font-bold">全球 Top 10</button>
+          <button data-scope="agency" class="scopeBtn chip rounded-lg px-3 py-1 text-[11px] font-bold">該機構</button>
+        </div>
+      </div>
+      <p class="text-[11px] text-slate-500 mt-1 mb-3">綠＝成功、紅＝失敗；橫條長度＝該家族的發射規模</p>
+      <div class="h-[340px]"><canvas id="rocketChart"></canvas></div>
+    </div>
+  </section>
+
+  <footer class="pt-2 text-[11px] text-slate-600 leading-5 flex flex-wrap items-center justify-between gap-3">
+    <span>成功率定義：狀態為 <span class="text-slate-400">Success</span> 或 <span class="text-slate-400">Partial</span>（進入軌道即視為任務達成）者計為成功；
+    <span class="text-slate-400">Partial</span> 為部分失敗。資料源為 Wikipedia 逐頁軌道發射表，2010 年前部分年份表列為「選錄」，數量低於全量。</span>
+    <span class="flex items-center gap-3">
+      <a class="text-cyan-400/80 hover:text-cyan-300 transition" href="https://en.wikipedia.org/wiki/List_of_spaceflight_launches" target="_blank" rel="noopener">資料來源 ↗</a>
+    </span>
+  </footer>
+</main>
+
+<script>
+const COLOR = {}; let D = null, SEL = 'SpaceX';
+let marketChart, rocketChart, rocketScope = 'global', rocketData = [];
+
+/* 資料層雙模組：優先打 API（Flask 本機執行）；失敗則改讀同目錄的靜態 JSON
+   → 同一份 index.html 能在 Flask 與 GitHub Pages（純靜態）兩種環境直接運作 */
+const STATIC_BUILD = true;   /* 由 export_static.py 產生 */      // 靜態建置時由 export_static.py 自動改寫為 true
+let STATIC_MODE = false;
+
+async function apiGet(path, fallback) {
+  if (!STATIC_MODE) {
+    try {
+      const r = await fetch(path, { cache: 'no-store' });
+      if (r.ok) {
+        const ct = r.headers.get('content-type') || '';
+        if (!ct || ct.includes('json')) return await r.json();
+      }
+    } catch (e) { /* 靜態環境：無 API 端點 */ }
+  }
+  if (fallback) {
+    const r2 = await fetch(fallback, { cache: 'no-store' });
+    if (r2.ok) return await r2.json();
+  }
+  throw new Error('unable to load ' + path);
+}
+
+async function detectMode() {
+  if (STATIC_BUILD) {
+    STATIC_MODE = true;
+  } else {
+    try {
+      const r = await fetch('/api/health', { cache: 'no-store' });
+      const ct = r.headers.get('content-type') || '';
+      STATIC_MODE = !ct.includes('json');
+    } catch (e) { STATIC_MODE = true; }
+  }
+  if (STATIC_MODE) {
+    const b = document.getElementById('syncBtn');
+    b.disabled = true;
+    b.classList.add('opacity-40', 'cursor-not-allowed');
+    document.getElementById('syncLabel').textContent = '同步功能（僅本機 Flask 可用）';
+    document.getElementById('syncStatus').textContent =
+      '靜態版（GitHub Pages）不支援即時同步；資料為建置當下的快照。';
+    document.getElementById('syncStatus').className =
+      'text-[10px] text-slate-500 text-right leading-4 max-w-[260px]';
+  }
+}
+
+function hexA(hex, a) {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+function colorOf(a) { return COLOR[a] || '#64748b'; }
+function fmt(n) { return n.toLocaleString('en-US'); }
+
+function renderKpis() {
+  const k = D.kpi;
+  const items = [
+    ['總發射任務數', fmt(k.missions), '筆', 'text-cyan-300'],
+    ['整體任務成功率', k.success_rate, '%', 'text-emerald-300'],
+    ['失敗任務數', fmt(k.failures), '筆', 'text-rose-300'],
+    ['SpaceX ' + k.year_max + ' 市佔', k.spacex_share_2025, '%', 'text-cyan-300'],
+    ['年發射量 ' + k.year_min + '→' + k.year_max, `${k.total_2000}→${k.total_2025}`, '次', 'text-violet-300'],
+    ['涵蓋機構數', k.agencies, '個', 'text-amber-300']
+  ];
+  document.getElementById('kpis').innerHTML = items.map(([l, v, u, c]) => `
+    <div class="glass rounded-xl px-4 py-3">
+      <div class="text-[10px] text-slate-500 tracking-wider">${l}</div>
+      <div class="mt-1 flex items-baseline gap-1">
+        <span class="font-mono text-xl font-black ${c}">${v}</span><span class="text-[11px] text-slate-500">${u}</span>
+      </div></div>`).join('');
+  document.getElementById('missionCount').textContent = fmt(k.missions);
+}
+
+function renderCards() {
+  const max = Math.max(...D.cards.map(c => c.total));
+  document.getElementById('cards').innerHTML = D.cards.map(c => `
+    <button class="acard glass rounded-2xl p-4 text-left relative overflow-hidden" data-agency="${c.agency}" style="--c:${c.color}">
+      <div class="glowbar absolute inset-x-0 top-0 h-[3px]" style="background:${c.color};box-shadow:0 0 18px ${c.color}"></div>
+      <div class="flex items-center justify-between">
+        <span class="h-8 w-8 rounded-lg grid place-items-center text-lg" style="background:${hexA(c.color,.16)};border:1px solid ${hexA(c.color,.42)}">${c.flag}</span>
+        <span class="chip rounded-md px-1.5 py-0.5 text-[9px] font-bold" style="color:${c.color}">${c.tag}</span>
+      </div>
+      <div class="mt-2 font-black text-[13px] leading-tight">${c.agency}</div>
+      <div class="mt-2 font-mono text-2xl font-black" style="color:${c.color}">${fmt(c.total)}</div>
+      <div class="text-[10px] text-slate-500 mt-0.5">${c.role}</div>
+      <div class="mt-2 h-1 rounded-full bg-white/10 overflow-hidden">
+        <div class="h-full rounded-full" style="width:${(c.total / max * 100).toFixed(1)}%;background:${c.color}"></div>
+      </div>
+      <div class="mt-2 flex items-center justify-between text-[10px] text-slate-500">
+        <span>成功率 ${c.rate}%</span><span>${D.kpi.year_max} 市佔 ${c.share2025}%</span>
+      </div>
+    </button>`).join('');
+  document.querySelectorAll('.acard').forEach(el =>
+    el.addEventListener('click', () => selectAgency(el.dataset.agency)));
+}
+
+async function selectAgency(name) {
+  SEL = name;
+  document.querySelectorAll('.acard').forEach(el =>
+    el.classList.toggle('on', el.dataset.agency === name));
+  const meta = await apiGet('/api/agency/' + encodeURIComponent(name),
+                            './data/agency/' + encodeURIComponent(name) + '.json');
+  const card = D.cards.find(c => c.agency === name);
+  document.getElementById('pFlag').textContent = meta.flag;
+  document.getElementById('pFlag').style.background = hexA(meta.color, .16);
+  document.getElementById('pFlag').style.border = '1px solid ' + hexA(meta.color, .42);
+  document.getElementById('pName').textContent = meta.zh;
+  document.getElementById('pRole').textContent =
+    `${meta.role} · ${meta.tag} · 維基百科分類：${meta.type === 'Commercial' ? 'Commercial（民營）' : 'National（國家）'}`;
+  document.getElementById('pChips').innerHTML = `
+    <span class="chip rounded-lg px-2.5 py-1 text-[11px]" style="color:${meta.color};border-color:${hexA(meta.color,.45)}">${meta.tag}</span>
+    <span class="chip rounded-lg px-2.5 py-1 text-[11px] text-slate-300">${meta.role}</span>
+    <span class="chip rounded-lg px-2.5 py-1 text-[11px] text-slate-300">最後發射 ${card.last} 年</span>`;
+  const kpi = [
+    ['總發射數', fmt(card.total), '次'],
+    ['任務成功率', card.rate, '%'],
+    ['失敗任務', card.fail, '次']
+  ];
+  document.getElementById('pKpis').innerHTML = kpi.map(([l, v, u]) => `
+    <div class="glass-soft rounded-xl px-3 py-2.5">
+      <div class="text-[10px] text-slate-500">${l}</div>
+      <div class="font-mono text-lg font-black" style="color:${meta.color}">${v}<span class="text-[10px] text-slate-500 ml-0.5">${u}</span></div>
+    </div>`).join('');
+  document.getElementById('pBg').textContent = meta.bg;
+  document.getElementById('pRockets').textContent = meta.rockets;
+  document.getElementById('pFeature').textContent = meta.feature;
+  document.getElementById('ytFrame').src =
+    `https://www.youtube-nocookie.com/embed/${meta.video}?rel=0&modestbranding=1`;
+  document.getElementById('ytTitle').textContent = '▶ ' + meta.video_title;
+  document.getElementById('wikiLink').href = meta.wiki;
+  document.getElementById('wikiLabel').textContent = meta.wiki_label;
+  renderVideoGrid(meta);
+  const bars = (meta.rocket_stats || []).slice(0, 10);
+  const mx = Math.max(1, ...bars.map(r => r.total));
+  document.getElementById('pRocketBars').innerHTML = bars.map(r => `
+    <div class="flex items-center gap-2">
+      <span class="w-24 shrink-0 text-[11px] text-slate-300 truncate">${r.family}</span>
+      <div class="flex-1 h-2 rounded-full bg-white/8 overflow-hidden flex">
+        <div style="width:${(r.success / mx * 100).toFixed(1)}%;background:#22c55e"></div>
+        <div style="width:${(r.fail / mx * 100).toFixed(1)}%;background:#ef4444"></div>
+      </div>
+      <span class="w-16 shrink-0 text-right font-mono text-[10px] text-slate-400">${r.total}次 ${r.rate}%</span>
+    </div>`).join('') || '<div class="text-[11px] text-slate-500">此機構在資料期間無載具紀錄</div>';
+  renderRace();
+  renderMarketHighlight();
+  if (rocketScope === 'agency') renderRockets();
+}
+
+function renderVideoGrid(meta) {
+  const vids = meta.videos || [];
+  const grid = document.getElementById('pVideoGrid');
+  grid.innerHTML = vids.map(([id, title, author], i) => `
+    <button class="vcard group flex items-center gap-2.5 w-full text-left rounded-xl overflow-hidden border border-white/10 bg-white/[.03] hover:border-cyan-400/50 hover:bg-cyan-400/[.07] transition"
+            data-vid="${id}" data-title="${title.replace(/"/g, '&quot;')}">
+      <span class="relative shrink-0 w-[104px] h-[59px] bg-black overflow-hidden">
+        <img src="https://i.ytimg.com/vi/${id}/mqdefault.jpg" alt="${title.replace(/"/g, '&quot;')}"
+             class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition"
+             onerror="this.style.display='none'">
+        <span class="absolute inset-0 grid place-items-center">
+          <span class="w-7 h-7 rounded-full bg-red-600/90 grid place-items-center text-[10px] text-white shadow-lg">▶</span>
+        </span>
+      </span>
+      <span class="min-w-0 pr-1">
+        <span class="block text-[11px] leading-snug text-slate-200 group-hover:text-cyan-200 transition line-clamp-2">${title}</span>
+        <span class="block text-[9px] text-slate-500 mt-1">2025–2026 · ${author || 'YouTube'}</span>
+      </span>
+    </button>`).join('') ||
+    '<div class="text-[11px] text-slate-500">此機構暫無近兩年影片</div>';
+  grid.querySelectorAll('.vcard').forEach(el => el.addEventListener('click', () => {
+    document.getElementById('ytFrame').src =
+      `https://www.youtube-nocookie.com/embed/${el.dataset.vid}?rel=0&modestbranding=1&autoplay=1`;
+    document.getElementById('ytTitle').textContent = '▶ ' + el.dataset.title;
+    document.getElementById('ytFrame').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }));
+  document.getElementById('ytSearchLink').href =
+    'https://www.youtube.com/results?search_query=' +
+    encodeURIComponent((meta.agency || '') + ' rocket launch 2026');
+}
+
+/* =====================================================================
+   動態排行榜動畫引擎（純 DOM + CSS transform，60fps rAF 線性插值）
+   - 每家機構一個固定 DOM 元素，排名改變時以 translateY 平滑交換位置
+   - 橫條寬度與數值在相鄰節點間以 rAF 線性插值，消除跳動頓挫
+   - 超車當下給予短暫 glow 視覺回饋
+   ===================================================================== */
+const ROW_H = 42;
+const RACE = {
+  gran: 'weekly', mode: 'cumulative', speed: 1,
+  data: null, periods: [], agencies: [], values: {}, maxAbs: 1, defIdx: 0,
+  pos: 0, playing: false, raf: null, lastTs: 0, rows: {}, lastRanks: {}, timers: {}
+};
+
+function raceSeries() { return RACE.data ? RACE.data[RACE.gran] : null; }
+
+function buildRaceRows() {
+  const host = document.getElementById('raceBars');
+  host.innerHTML = '';
+  RACE.rows = {}; RACE.lastRanks = {};
+  RACE.agencies.forEach(a => {
+    const c = colorOf(a);
+    const el = document.createElement('div');
+    el.className = 'race-bar-row';
+    el.style.setProperty('--c', c);
+    el.innerHTML = `
+      <div class="flex items-center gap-2 h-full px-1.5">
+        <span class="rnk w-6 text-right font-mono text-[11px] font-bold text-slate-500"></span>
+        <span class="nm w-[84px] truncate text-[11px] font-bold text-slate-200" title="${a}">${a}</span>
+        <span class="track relative flex-1 h-[24px] rounded-md bg-white/[.05] border border-white/[.07]">
+          <span class="halo absolute inset-y-0 left-0 w-full pointer-events-none" style="filter:blur(9px)">
+            <span class="halofill absolute inset-0 rounded-md" style="background:${c}"></span>
+          </span>
+          <span class="clip absolute inset-0 overflow-hidden rounded-md">
+            <span class="fill absolute inset-y-0 left-0 w-full" style="background:${c}"></span>
+          </span>
+        </span>
+        <span class="val w-[80px] text-right font-mono text-[12px] font-black text-slate-100"></span>
+      </div>`;
+    host.appendChild(el);
+    RACE.rows[a] = {
+      el, rnk: el.querySelector('.rnk'), fill: el.querySelector('.fill'),
+      halo: el.querySelector('.halofill'), val: el.querySelector('.val')
+    };
+  });
+}
+
+function raceFrame() {
+  const n = RACE.periods.length;
+  const pos = Math.max(0, Math.min(n - 1, RACE.pos));
+  const i0 = Math.floor(pos), i1 = Math.min(n - 1, i0 + 1), f = pos - i0;
+  const target = Math.min(n - 1, Math.ceil(pos));
+  const vals = {}, tVals = {};
+  for (const a of RACE.agencies) {
+    const arr = RACE.values[a];
+    vals[a] = arr[i0] + (arr[i1] - arr[i0]) * f;
+    tVals[a] = arr[target];
+  }
+  return { vals, tVals, target };
+}
+
+function renderRace() {
+  if (!RACE.periods.length) return;
+  const { vals, tVals, target } = raceFrame();
+  const order = RACE.agencies.slice().sort((a, b) => tVals[b] - tVals[a]);
+  order.forEach((a, r) => {
+    const row = RACE.rows[a];
+    if (!row) return;
+    row.el.style.transform = 'translateY(' + (r * ROW_H) + 'px)';   // 物理交換位置
+    row.rnk.textContent = (r + 1);
+    const prev = RACE.lastRanks[a];
+    if (prev !== undefined && r < prev) {          // 名次上升 → 超車 → 短暫 glow
+      row.el.classList.add('overtake');
+      clearTimeout(RACE.timers[a]);
+      RACE.timers[a] = setTimeout(() => row.el.classList.remove('overtake'), 700);
+    }
+    RACE.lastRanks[a] = r;
+    const v = Math.max(0, vals[a]);
+    const tf = 'scaleX(' + Math.min(1, v / RACE.maxAbs).toFixed(4) + ')';
+    row.fill.style.transform = tf;
+    row.halo.style.transform = tf;
+    row.val.textContent = fmt(Math.round(v));
+  });
+  const label = RACE.periods[target];
+  document.getElementById('periodLabel').textContent = label;
+  document.getElementById('raceWatermark').textContent = label;
+}
+
+function raceLoop(ts) {
+  RACE.raf = requestAnimationFrame(raceLoop);
+  if (!RACE.playing || !RACE.periods.length) return;
+  const dt = ts - RACE.lastTs; RACE.lastTs = ts;
+  const stepMs = 520 / RACE.speed;
+  RACE.pos += dt / stepMs;
+  if (RACE.pos >= RACE.periods.length - 1) {
+    RACE.pos = RACE.periods.length - 1;
+    setRacePlaying(false);
+  }
+  renderRace();
+  document.getElementById('yearSlider').value = Math.round(RACE.pos);
+}
+
+function setRacePlaying(on) {
+  RACE.playing = on;
+  document.getElementById('playBtn').textContent = on ? '⏸ 暫停' : '▶ 播放';
+  if (on) RACE.lastTs = performance.now();
+}
+
+function setRaceOptions(keepPos) {
+  const g = raceSeries();
+  if (!g) return;
+  const prevPos = RACE.pos, keep = keepPos;
+  RACE.periods = g.periods;
+  RACE.agencies = g.agencies;
+  RACE.values = g[RACE.mode];
+  let mx = 1;
+  for (const a of RACE.agencies) {
+    const arr = RACE.values[a];
+    for (let i = 0; i < arr.length; i++) if (arr[i] > mx) mx = arr[i];
+  }
+  RACE.maxAbs = mx;
+  const sl = document.getElementById('yearSlider');
+  sl.min = 0; sl.max = RACE.periods.length - 1;
+  if (keep) {
+    RACE.pos = Math.min(prevPos, RACE.periods.length - 1);
+  } else {
+    let def = 0;
+    if (RACE.gran === 'weekly') {
+      const i = RACE.periods.findIndex(p => p >= '2018-W01');
+      def = i < 0 ? 0 : i;
+    }
+    RACE.defIdx = def;
+    RACE.pos = def;
+  }
+  sl.value = Math.round(RACE.pos);
+  buildRaceRows();
+  renderRace();
+  const win = RACE.mode === 'rolling' ? (RACE.gran === 'weekly' ? '過去 52 週滾動發射數' : '過去 12 個月滾動發射數')
+                                       : '歷史累積發射數';
+  document.getElementById('raceSubtitle').textContent =
+    '粒度：' + (RACE.gran === 'weekly' ? '週 (ISO Week)' : '月 (Month)') +
+    ' ｜ 視角：' + win + ' ｜ ' + RACE.periods.length.toLocaleString() + ' 個節點（' +
+    RACE.periods[0] + ' → ' + RACE.periods[RACE.periods.length - 1] + '）';
+  document.getElementById('modeTag').textContent =
+    RACE.mode === 'rolling' ? (RACE.gran === 'weekly' ? '滾動 52 週' : '滾動 12 月') : '累積';
+  document.querySelectorAll('[data-gran]').forEach(b =>
+    b.classList.toggle('active', b.dataset.gran === RACE.gran));
+  document.querySelectorAll('[data-mode]').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === RACE.mode));
+  document.querySelectorAll('[data-speed]').forEach(b =>
+    b.classList.toggle('active', +b.dataset.speed === RACE.speed));
+}
+
+async function loadRaceSeries() {
+  try {
+    RACE.data = await apiGet('/api/race', './data/race.json');
+    setRaceOptions(false);
+  } catch (e) {
+    document.getElementById('raceSubtitle').textContent = '無法載入排行榜時間序列';
+  }
+}
+
+function setupMarket() {
+  const ds = D.market.agencies.map(a => ({
+    label: a, data: D.market.share[a], stack: 's', fill: true, tension: .32,
+    borderColor: colorOf(a), backgroundColor: hexA(colorOf(a), .28),
+    borderWidth: 1.2, pointRadius: 0, pointHoverRadius: 4 }));
+  if (D.market.share['其他機構']) ds.push({
+    label: '其他機構', data: D.market.share['其他機構'], stack: 's', fill: true, tension: .32,
+    borderColor: '#64748b', backgroundColor: 'rgba(100,116,139,.18)', borderWidth: 1, pointRadius: 0 });
+  marketChart = new Chart(document.getElementById('marketChart'), {
+    type: 'line',
+    data: { labels: D.years, datasets: ds },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+        y: { stacked: true, min: 0, max: 100, grid: { color: 'rgba(148,163,184,.10)' },
+             ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => v + '%' },
+             title: { display: true, text: '全球年度發射市佔率（%）', color: '#64748b', font: { size: 11 } } }
+      },
+      plugins: {
+        legend: { labels: { color: '#cbd5e1', boxWidth: 10, boxHeight: 10, font: { size: 11 } } },
+        tooltip: { backgroundColor: 'rgba(2,6,23,.94)', borderColor: 'rgba(148,163,184,.25)',
+          borderWidth: 1, titleColor: '#e2e8f0', bodyColor: '#cbd5e1', padding: 10,
+          callbacks: { label: c => ` ${c.dataset.label}：${c.parsed.y.toFixed(1)}%` } }
+      }
+    }
+  });
+}
+
+function renderMarketHighlight() {
+  marketChart.data.datasets.forEach(d => {
+    const on = d.label === SEL;
+    d.borderWidth = on ? 3 : 1.2;
+    d.backgroundColor = hexA(colorOf(d.label), on ? .55 : .22);
+    d.borderColor = on ? '#ffffff' : colorOf(d.label);
+    d.order = on ? -1 : 0;
+  });
+  marketChart.update();
+}
+
+function setupRockets() {
+  rocketChart = new Chart(document.getElementById('rocketChart'), {
+    type: 'bar',
+    data: { labels: [], datasets: [
+      { label: '成功', data: [], backgroundColor: '#22c55e', stack: 's', borderRadius: 3, borderSkipped: false },
+      { label: '失敗', data: [], backgroundColor: '#ef4444', stack: 's', borderRadius: 3, borderSkipped: false }
+    ] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      animation: { duration: 480 },
+      scales: {
+        x: { stacked: true, beginAtZero: true, grid: { color: 'rgba(148,163,184,.10)' },
+             ticks: { color: '#94a3b8', font: { size: 10 }, precision: 0 } },
+        y: { stacked: true, grid: { display: false }, ticks: { color: '#cbd5e1', font: { size: 11, weight: '600' } } }
+      },
+      plugins: {
+        legend: { labels: { color: '#cbd5e1', boxWidth: 10, boxHeight: 10, font: { size: 11 } } },
+        tooltip: { backgroundColor: 'rgba(2,6,23,.94)', borderColor: 'rgba(148,163,184,.25)',
+          borderWidth: 1, titleColor: '#e2e8f0', bodyColor: '#cbd5e1', padding: 10,
+          callbacks: {
+            label: c => ` ${c.dataset.label}：${c.parsed.x} 次`,
+            afterBody: items => { const r = rocketData[items[0].dataIndex];
+              return [` 發射總數：${r.total} 次`, ` 成功率：${r.rate}%`]; } } }
+      }
+    }
+  });
+}
+
+function renderRockets() {
+  rocketData = rocketScope === 'global' ? D.rockets : (D.agency_rockets[SEL] || []);
+  rocketChart.data.labels = rocketData.map(r => r.family);
+  rocketChart.data.datasets[0].data = rocketData.map(r => r.success);
+  rocketChart.data.datasets[1].data = rocketData.map(r => r.fail);
+  rocketChart.options.plugins.title = { display: true, text: rocketScope === 'global'
+    ? '全球 Top 10 主力火箭家族' : `${SEL} 主力火箭家族`, color: '#64748b', font: { size: 11 } };
+  rocketChart.update();
+  document.querySelectorAll('.scopeBtn').forEach(b => {
+    const on = b.dataset.scope === rocketScope;
+    b.classList.toggle('bg-cyan-400/20', on); b.classList.toggle('text-cyan-200', on);
+    b.classList.toggle('text-slate-400', !on);
+  });
+}
+
+/* ---------- 動態排行榜控制列 ---------- */
+document.getElementById('playBtn').addEventListener('click', () => {
+  if (!RACE.periods.length) return;
+  if (!RACE.playing && RACE.pos >= RACE.periods.length - 1) { RACE.pos = RACE.defIdx; renderRace(); }
+  setRacePlaying(!RACE.playing);
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  setRacePlaying(false);
+  RACE.pos = RACE.defIdx;
+  document.getElementById('yearSlider').value = RACE.defIdx;
+  renderRace();
+});
+document.getElementById('yearSlider').addEventListener('input', e => {
+  RACE.pos = +e.target.value;
+  renderRace();
+});
+document.querySelectorAll('[data-gran]').forEach(b => b.addEventListener('click', () => {
+  if (RACE.gran === b.dataset.gran) return;
+  RACE.gran = b.dataset.gran;
+  setRacePlaying(false);
+  setRaceOptions(false);
+}));
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
+  if (RACE.mode === b.dataset.mode) return;
+  RACE.mode = b.dataset.mode;
+  setRacePlaying(false);
+  setRaceOptions(true);          // 切換視角時保留目前時間位置
+}));
+document.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => {
+  RACE.speed = +b.dataset.speed;
+  document.querySelectorAll('[data-speed]').forEach(x =>
+    x.classList.toggle('active', +x.dataset.speed === RACE.speed));
+}));
+document.querySelectorAll('.scopeBtn').forEach(b => b.addEventListener('click', () => {
+  rocketScope = b.dataset.scope; renderRockets();
+}));
+
+/* ======================= 動態即時同步（Live Sync） ======================= */
+let SYNCING = false;
+
+function setSyncUI(state, msg) {
+  const btn = document.getElementById('syncBtn');
+  const icon = document.getElementById('syncIcon');
+  const label = document.getElementById('syncLabel');
+  const status = document.getElementById('syncStatus');
+  status.textContent = msg;
+  if (state === 'running') {
+    icon.classList.add('animate-spin'); label.textContent = '同步中… Syncing…';
+    status.className = 'text-[10px] text-cyan-300 text-right leading-4 max-w-[260px]';
+  } else if (state === 'ok') {
+    icon.classList.remove('animate-spin'); label.textContent = '同步最新數據 (Sync Live Data)';
+    status.className = 'text-[10px] text-emerald-300 text-right leading-4 max-w-[260px]';
+  } else if (state === 'error') {
+    icon.classList.remove('animate-spin'); label.textContent = '同步最新數據 (Sync Live Data)';
+    status.className = 'text-[10px] text-rose-300 text-right leading-4 max-w-[260px]';
+  } else {
+    icon.classList.remove('animate-spin'); label.textContent = '同步最新數據 (Sync Live Data)';
+    status.className = 'text-[10px] text-slate-500 text-right leading-4 max-w-[260px]';
+  }
+  btn.disabled = (state === 'running');
+}
+
+async function pollSync() {
+  let s;
+  try { s = await apiGet('/api/sync/status', './data/sync_status.json'); }
+  catch (e) { setSyncUI('error', '無法取得同步狀態'); SYNCING = false; return; }
+  if (s.running) { setSyncUI('running', s.message || '同步中…'); setTimeout(pollSync, 1200); return; }
+  SYNCING = false;
+  if (s.error) { setSyncUI('error', '❌ ' + s.error); return; }
+  setSyncUI('ok', '✅ ' + (s.message || '同步完成') +
+    (s.finished_at ? '（' + s.finished_at + '）' : ''));
+  await reloadAll();
+}
+
+async function syncLive() {
+  if (SYNCING || STATIC_MODE) return;
+  SYNCING = true;
+  setSyncUI('running', '正在啟動背景同步…');
+  try {
+    await fetch('/api/sync', { method: 'POST' });
+  } catch (e) {
+    SYNCING = false; setSyncUI('error', '❌ 無法連線後端'); return;
+  }
+  pollSync();
+}
+document.getElementById('syncBtn').addEventListener('click', syncLive);
+
+/* 同步完成後：重新抓取 /api/bootstrap 並重建所有圖表與卡片 */
+async function reloadAll() {
+  const D0 = await apiGet('/api/bootstrap', './data/bootstrap.json');
+  D = D0;
+  D.cards.forEach(c => COLOR[c.agency] = c.color);
+  document.getElementById('yearRange').textContent = D.kpi.year_min + '–' + D.kpi.year_max;
+  document.getElementById('syncYear').textContent = new Date().getFullYear();
+  renderKpis();
+  renderCards();
+  if (marketChart) marketChart.destroy();
+  if (rocketChart) rocketChart.destroy();
+  setupMarket(); setupRockets(); renderRockets();
+  await loadRaceSeries();          // 同步後重新載入排行榜時間序列（保留粒度／視角）
+  await selectAgency(SEL);
+}
+
+(async function boot() {
+  await detectMode();
+  D = await apiGet('/api/bootstrap', './data/bootstrap.json');
+  D.cards.forEach(c => COLOR[c.agency] = c.color);
+  document.getElementById('yearRange').textContent = D.kpi.year_min + '–' + D.kpi.year_max;
+  document.getElementById('syncYear').textContent = new Date().getFullYear();
+  renderKpis(); renderCards(); setupMarket(); setupRockets(); renderRockets();
+  await loadRaceSeries();
+  await selectAgency('SpaceX');
+  RACE.raf = requestAnimationFrame(raceLoop);   // 動畫引擎常駐 rAF（播放時才前進）
+  if (!STATIC_MODE) {
+    try {
+      const s = await apiGet('/api/sync/status', './data/sync_status.json');
+      if (s.finished_at) setSyncUI('ok', '✅ ' + s.message + '（' + s.finished_at + '）');
+      else if (s.total) setSyncUI('ok', '✅ ' + s.message);
+    } catch (e) { /* ignore */ }
+  }
+})();
+</script>
+</body>
+</html>
